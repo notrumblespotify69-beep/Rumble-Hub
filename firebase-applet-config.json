@@ -1,10 +1,10 @@
 {
-  "projectId": "gen-lang-client-0690325579",
-  "appId": "1:561784484961:web:63336cb508d953f0766620",
-  "apiKey": "AIzaSyDgKFGcGxEAdj6mvxKHsNEzUXEcj0Wp2cU",
-  "authDomain": "gen-lang-client-0690325579.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-94af704e-08c1-4442-9598-832968e0fc63",
-  "storageBucket": "gen-lang-client-0690325579.firebasestorage.app",
-  "messagingSenderId": "561784484961",
-  "measurementId": ""
+  "projectId": "rumbleshit",
+  "appId": "1:405546539546:web:cf15bdc85efc6dd65c0fa3",
+  "apiKey": "AIzaSyBGJQ-hNxtjBjY_G9-xY-269T73RK5YCw4",
+  "authDomain": "rumbleshit.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "rumbleshit.firebasestorage.app",
+  "messagingSenderId": "405546539546",
+  "measurementId": "G-Q6M3P3XDZR"
 }
