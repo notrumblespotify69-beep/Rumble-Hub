@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the store",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "balance": { "type": "number" }
+      },
+      "required": ["uid", "email", "role", "balance"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A digital product/game",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "price": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["title", "variants"]
+    },
+    "Key": {
+      "title": "Key",
+      "description": "A digital key for a product",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "variantId": { "type": "string" },
+        "productName": { "type": "string" },
+        "variantName": { "type": "string" },
+        "keyString": { "type": "string" },
+        "isSold": { "type": "boolean" },
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerPhoto": { "type": "string" },
+        "purchasedAt": { "type": "string" }
+      },
+      "required": ["productId", "variantId", "keyString", "isSold"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A user review for a product",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "rating": { "type": "number" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["productId", "userId", "rating", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Store products"
+    },
+    "/keys/{keyId}": {
+      "schema": { "$ref": "#/entities/Key" },
+      "description": "Digital keys"
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Product reviews"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Game Key Store",
+  "description": "A digital storefront for game keys with user balances and cart functionality.",
+  "requestFramePermissions": []
+}
