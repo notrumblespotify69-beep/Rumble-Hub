@@ -1,10 +1,10 @@
 {
-  "projectId": "rumbleshit",
+  "projectId": "rubmleshit",
   "appId": "1:405546539546:web:cf15bdc85efc6dd65c0fa3",
   "apiKey": "AIzaSyBGJQ-hNxtjBjY_G9-xY-269T73RK5YCw4",
-  "authDomain": "rumbleshit.firebaseapp.com",
+  "authDomain": "rubmleshit.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
-  "storageBucket": "rumbleshit.firebasestorage.app",
+  "storageBucket": "rubmleshit.firebasestorage.app",
   "messagingSenderId": "405546539546",
   "measurementId": "G-Q6M3P3XDZR"
 }
