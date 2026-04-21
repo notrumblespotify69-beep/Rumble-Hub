@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { collection, doc, getDoc, getDocs, limit, query, runTransaction, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, runTransaction, where, updateDoc } from 'firebase/firestore';
 import { ArrowRight, CreditCard, Gamepad2, Ticket, Wallet } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../AuthContext';
+import SEO from '../components/SEO';
 
 export default function Checkout() {
   const { productId, variantId } = useParams();
@@ -27,6 +28,20 @@ export default function Checkout() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
+  
+  const [paymentSettings, setPaymentSettings] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const d = await getDoc(doc(db, 'settings', 'payments'));
+        if (d.exists()) {
+          setPaymentSettings(d.data());
+        }
+      } catch(e) {}
+    };
+    fetchSettings();
+  },[]);
 
   useEffect(() => {
     if (isCartCheckout) {
@@ -61,18 +76,20 @@ export default function Checkout() {
   const balanceToUse = useBalance ? Math.min(profile?.balance || 0, totalAfterDiscount) : 0;
   const finalAmount = totalAfterDiscount - balanceToUse;
 
-  const handleApplyPromo = async () => {
+  const handleApplyPromo = async (codeToApply?: string) => {
+    const code = codeToApply || promoCode;
     setPromoError('');
     setPromoSuccess('');
-    if (!promoCode.trim()) return;
+    if (!code.trim()) return;
 
     try {
       const promoSnap = await getDocs(
-        query(collection(db, 'promocodes'), where('code', '==', promoCode.toUpperCase()))
+        query(collection(db, 'promocodes'), where('code', '==', code.toUpperCase()))
       );
 
       if (promoSnap.empty) {
         setPromoError('Invalid coupon code');
+        if (codeToApply) localStorage.removeItem('savedPromo');
         return;
       }
 
@@ -80,25 +97,37 @@ export default function Checkout() {
 
       if (promo.maxUses > 0 && promo.uses >= promo.maxUses) {
         setPromoError('Coupon code has reached maximum uses');
+        if (codeToApply) localStorage.removeItem('savedPromo');
         return;
       }
 
       const userUses = promo.usedBy?.[user?.uid || ''] || 0;
       if (promo.maxUsesPerUser > 0 && userUses >= promo.maxUsesPerUser) {
         setPromoError('You have reached the maximum uses for this coupon');
+        if (codeToApply) localStorage.removeItem('savedPromo');
         return;
       }
 
       if (promo.type === 'discount') {
         setDiscountPercent(promo.value);
+        setPromoCode(code.toUpperCase());
         setPromoSuccess(`Applied ${promo.value}% discount!`);
+        localStorage.setItem('savedPromo', code.toUpperCase());
       } else {
         setPromoError('This coupon is only for balance top-ups.');
+        if (codeToApply) localStorage.removeItem('savedPromo');
       }
     } catch {
       setPromoError('Failed to apply coupon');
     }
   };
+
+  useEffect(() => {
+    const savedPromo = localStorage.getItem('savedPromo');
+    if (savedPromo && user) {
+      handleApplyPromo(savedPromo);
+    }
+  }, [user]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -113,7 +142,7 @@ export default function Checkout() {
 
           if (!existingTransaction.empty) {
             window.history.replaceState({}, document.title, window.location.pathname);
-            navigate('/profile');
+            navigate('/profile?tab=purchases');
             return;
           }
 
@@ -194,9 +223,21 @@ export default function Checkout() {
           : null;
       const promoSnap = promoQuery ? await getDocs(promoQuery) : null;
       const promoDocRef = promoSnap && !promoSnap.empty ? doc(db, 'promocodes', promoSnap.docs[0].id) : null;
+      const promoData = promoSnap && !promoSnap.empty ? promoSnap.docs[0].data() : null;
+
+      let affiliateDocRef = null;
+      if (promoData && promoData.isAffiliate && promoData.affiliateEmail) {
+        const affiliateQ = query(collection(db, 'users'), where('email', '==', promoData.affiliateEmail.toLowerCase()));
+        const affiliateSnap = await getDocs(affiliateQ);
+        if (!affiliateSnap.empty) {
+          affiliateDocRef = doc(db, 'users', affiliateSnap.docs[0].id);
+        }
+      }
+
       const transactionRef = doc(collection(db, 'transactions'));
       const purchasedAt = Date.now();
 
+      let promoDetailsStr: string | null = null;
       await runTransaction(db, async transaction => {
         const userSnap = await transaction.get(userRef);
         if (!userSnap.exists()) {
@@ -221,17 +262,17 @@ export default function Checkout() {
           }
         });
 
-        if (promoDocRef) {
+        if (promoDocRef && promoData) {
           const promoDocSnap = await transaction.get(promoDocRef);
           if (!promoDocSnap.exists()) {
             throw new Error('The coupon code is no longer available.');
           }
 
-          const promoData = promoDocSnap.data() as any;
-          const uses = Number(promoData.uses || 0);
-          const maxUses = Number(promoData.maxUses || 0);
-          const userUses = Number(promoData.usedBy?.[user.uid] || 0);
-          const maxUsesPerUser = Number(promoData.maxUsesPerUser || 0);
+          const currentPromoData = promoDocSnap.data() as any;
+          const uses = Number(currentPromoData.uses || 0);
+          const maxUses = Number(currentPromoData.maxUses || 0);
+          const userUses = Number(currentPromoData.usedBy?.[user.uid] || 0);
+          const maxUsesPerUser = Number(currentPromoData.maxUsesPerUser || 0);
 
           if (maxUses > 0 && uses >= maxUses) {
             throw new Error('Coupon code has reached maximum uses.');
@@ -240,10 +281,33 @@ export default function Checkout() {
             throw new Error('You have reached the maximum uses for this coupon.');
           }
 
+          promoDetailsStr = currentPromoData.type === 'balance' ? `+$${currentPromoData.value} bonus` : `${currentPromoData.value}% discount`;
+
           transaction.update(promoDocRef, {
             uses: uses + 1,
-            usedBy: { ...promoData.usedBy, [user.uid]: userUses + 1 }
+            usedBy: { ...currentPromoData.usedBy, [user.uid]: userUses + 1 }
           });
+        }
+
+        if (affiliateDocRef) {
+          const affSnap = await transaction.get(affiliateDocRef);
+          if (affSnap.exists() && affSnap.id !== user.uid) {
+            const affData = affSnap.data() as any;
+            const earned = currentTotalAfterDiscount * 0.20;
+            transaction.update(affiliateDocRef, {
+              balance: Number(affData.balance || 0) + earned,
+              affiliateEarnings: Number(affData.affiliateEarnings || 0) + earned
+            });
+            const affHistoryRef = doc(collection(db, 'affiliate_history'));
+            transaction.set(affHistoryRef, {
+              affiliateId: affSnap.id,
+              referredUserId: user.uid,
+              referredUserEmail: user.email,
+              amount: currentTotalAfterDiscount,
+              earned: earned,
+              date: purchasedAt
+            });
+          }
         }
 
         if (appliedBalanceToUse > 0) {
@@ -276,6 +340,8 @@ export default function Checkout() {
                 ? 'Credit Card'
                 : 'Other',
           productTitle: isCartCheckout ? 'Cart Checkout' : product.title,
+          promoCode: appliedPromoCode || null,
+          promoDetails: promoDetailsStr,
           createdAt: purchasedAt,
           ...(sessionId ? { sessionId } : {})
         });
@@ -285,7 +351,16 @@ export default function Checkout() {
         clearCart();
       }
 
-      navigate('/profile');
+      localStorage.removeItem('savedPromo');
+      try {
+         await fetch('/api/discord/give-role', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.uid })
+         });
+      } catch (e) {}
+
+      navigate('/profile?tab=purchases');
     } catch (purchaseError: any) {
       console.error(purchaseError);
       setError(purchaseError.message || 'An error occurred during purchase.');
@@ -356,6 +431,7 @@ export default function Checkout() {
 
   return (
     <div className="w-full">
+      <SEO title="Checkout | Rumble Hub" description="Complete your secure purchase on Rumble Hub." />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pt-32">
         <div className="flex flex-col lg:flex-row gap-12">
           <div className="w-full lg:w-1/3">
@@ -447,7 +523,7 @@ export default function Checkout() {
                 You can open a ticket on your Customer Dashboard to receive assistance from our support team.
               </div>
               <button
-                onClick={() => navigate('/profile')}
+                onClick={() => navigate('/profile?tab=tickets')}
                 className="border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 px-4 py-2 rounded-lg text-xs font-medium transition-colors mb-8 flex items-center gap-2"
               >
                 <Ticket className="w-4 h-4" /> Open a Support Ticket
@@ -493,7 +569,7 @@ export default function Checkout() {
                     className="flex-1 bg-[#1A1D24] border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   <button
-                    onClick={handleApplyPromo}
+                    onClick={() => handleApplyPromo()}
                     className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors"
                   >
                     Apply &rarr;
@@ -507,6 +583,7 @@ export default function Checkout() {
                 <label className="block text-sm font-medium text-zinc-300 mb-2">Payment Method *</label>
 
                 <div className="space-y-3">
+                  {(!paymentSettings || paymentSettings?.balance?.enabled) && (
                   <label
                     className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-colors ${
                       useBalance
@@ -528,8 +605,10 @@ export default function Checkout() {
                     </div>
                     <Wallet className={`w-5 h-5 ${useBalance ? 'text-indigo-400' : 'text-zinc-500'}`} />
                   </label>
+                  )}
 
-                  <div className="flex items-center justify-between p-4 rounded-xl border bg-[#22252D] border-zinc-600">
+                  {(!paymentSettings || paymentSettings?.stripe?.enabled) && (
+                  <div className="flex items-center justify-between p-4 rounded-xl border bg-[#22252D] border-zinc-600 opacity-100">
                     <div className="flex items-center gap-3">
                       <div className="w-4 h-4 rounded-full border-4 border-indigo-600 bg-zinc-900"></div>
                       <div>
@@ -541,6 +620,26 @@ export default function Checkout() {
                       <CreditCard className="w-5 h-5 text-zinc-400" />
                     </div>
                   </div>
+                  )}
+
+                  {paymentSettings?.paypal?.enabled && (
+                  <div className="flex items-center justify-between p-4 rounded-xl border bg-[#22252D] border-zinc-600">
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 rounded-full border-4 border-zinc-600 bg-zinc-900"></div>
+                      <div>
+                        <div className="font-medium text-white">PayPal</div>
+                        <div className="text-xs text-zinc-500">Not currently selected</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <CreditCard className="w-5 h-5 text-zinc-400" />
+                    </div>
+                  </div>
+                  )}
+                  
+                  {paymentSettings && !paymentSettings?.stripe?.enabled && !paymentSettings?.balance?.enabled && !paymentSettings?.paypal?.enabled && (
+                    <div className="text-red-400 text-sm">No payment methods available right now.</div>
+                  )}
                 </div>
               </div>
 
@@ -566,19 +665,43 @@ export default function Checkout() {
                 <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-lg text-sm">{error}</div>
               )}
 
-              <button
-                onClick={handleProceed}
-                disabled={isProcessing}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-4 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    Proceed to Payment <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {profile && !profile.discordId ? (
+                <button
+                  onClick={() => {
+                     window.open(`/api/discord/auth-url?uid=${user?.uid}`, '_blank', 'width=500,height=600');
+                     window.addEventListener('message', async (e) => {
+                        if (e.data?.type === 'discord_auth_success') {
+                           if (user) {
+                             try {
+                               await updateDoc(doc(db, 'users', user.uid), e.data.data);
+                               window.location.reload();
+                             } catch (err) {
+                               console.error(err);
+                             }
+                           }
+                        }
+                     });
+                  }}
+                  className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-4 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                >
+                  <Gamepad2 className="w-4 h-4" />
+                  Link Discord to Continue
+                </button>
+              ) : (
+                <button
+                  onClick={handleProceed}
+                  disabled={isProcessing}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-4 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? (
+                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      Proceed to Payment <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -16,6 +16,8 @@ function Toast({ toast }: { toast: {message: string, type: string} | null }) {
   );
 }
 
+import SEO from '../components/SEO';
+
 export default function ProductPage() {
   const { slug } = useParams();
   const { user, profile, addToCart } = useAuth();
@@ -138,6 +140,8 @@ export default function ProductPage() {
           combined.push({
             id: 'auto-' + key.id,
             keyId: key.id,
+            productId: product.id,
+            productName: product.title,
             userId: key.ownerId,
             userName: key.ownerName || 'Customer',
             userPhoto: key.ownerPhoto || '',
@@ -248,6 +252,7 @@ export default function ProductPage() {
 
       await addDoc(collection(db, 'reviews'), {
         productId: product.id,
+        productName: product.title,
         keyId: unreviewedKey.id,
         userId: user.uid,
         userName: profile.displayName || 'Customer',
@@ -283,6 +288,11 @@ export default function ProductPage() {
 
   return (
     <div className="w-full pb-20">
+      <SEO 
+        title={`${product.title} | Rumble Hub`} 
+        description={product.description || `Buy ${product.title} on Rumble Hub.`}
+        image={product.image || '/background.png'}
+      />
       <Navbar />
       <Toast toast={toast} />
 
@@ -424,11 +434,11 @@ export default function ProductPage() {
                             )}
                           </div>
                           <p className={`text-sm pl-11 mb-2 ${review.isAuto ? 'text-zinc-500 italic' : 'text-zinc-400'}`}>{review.text}</p>
-                          {review.variantName && (
-                            <div className="pl-11">
-                              <span className="inline-block bg-zinc-800 text-zinc-400 text-[10px] px-2 py-0.5 rounded">Purchased: {review.variantName}</span>
-                            </div>
-                          )}
+                          <div className="pl-11">
+                            <span className="inline-block bg-zinc-800 text-zinc-400 text-[10px] px-2 py-0.5 rounded">
+                              Purchased: {product.title} {review.variantName ? `- ${review.variantName}` : ''}
+                            </span>
+                          </div>
                         </div>
                       ))
                     )}

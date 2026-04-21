@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
+import SEO from '../components/SEO';
 import { Star } from 'lucide-react';
 
 export default function Feedback() {
@@ -42,6 +43,7 @@ export default function Feedback() {
 
   return (
     <div className="w-full">
+      <SEO title="Customer Feedback | Rumble Hub" description="Read what our community thinks about our products." />
       <Navbar />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pt-32">
@@ -103,7 +105,7 @@ export default function Feedback() {
                       </div>
                     )}
                     <span className="text-xs font-medium text-zinc-400 truncate">
-                      Purchased: {productName} {review.variantName ? `(${review.variantName})` : ''}
+                      Purchased: {productName} {review.variantName ? `- ${review.variantName}` : ''}
                     </span>
                   </div>
                 </div>

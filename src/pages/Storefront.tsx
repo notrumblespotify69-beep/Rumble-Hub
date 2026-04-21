@@ -5,6 +5,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { useAuth } from '../AuthContext';
 import { db } from '../firebase';
 import Navbar from '../components/Navbar';
+import SEO from '../components/SEO';
 
 export default function Storefront() {
   const { profile } = useAuth();
@@ -21,8 +22,9 @@ export default function Storefront() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const prodSnap = await getDocs(collection(db, 'products'));
-        setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const productsSnap = await getDocs(collection(db, 'products'));
+        const prods = productsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        setProducts(prods);
 
         const keysSnap = await getDocs(collection(db, 'keys'));
         const counts: Record<string, number> = {};
@@ -40,7 +42,15 @@ export default function Storefront() {
         setAvailableKeys(counts);
 
         const reviewsSnap = await getDocs(query(collection(db, 'reviews'), orderBy('createdAt', 'desc')));
-        const allReviews = reviewsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        const allReviews = reviewsSnap.docs.map(d => {
+          const rData = d.data() as any;
+          const matchedProd = prods.find(p => p.id === rData.productId);
+          return {
+            id: d.id,
+            ...rData,
+            productName: matchedProd ? matchedProd.title : 'Product'
+          };
+        });
 
         const uniqueUsers = new Set(allReviews.map(review => review.userId));
         const totalRating = allReviews.reduce((sum, review) => sum + (review.rating || 5), 0);
@@ -64,6 +74,7 @@ export default function Storefront() {
 
   return (
     <div className="min-h-screen bg-[#0B0E14] text-zinc-50 font-sans selection:bg-indigo-500/30 relative">
+      <SEO />
       <div className="absolute top-0 left-0 w-full h-screen z-0 pointer-events-none">
         <div
           className="w-full h-full bg-cover bg-center bg-no-repeat"
@@ -75,7 +86,7 @@ export default function Storefront() {
       <div className="relative z-10">
         <Navbar />
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pt-[85vh]">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pt-[calc(100vh-140px)]">
           <div className="mb-8 flex items-center justify-between">
             <h2 className="text-2xl font-bold flex items-center gap-2 uppercase tracking-tight">Featured Products</h2>
           </div>
@@ -241,7 +252,7 @@ export default function Storefront() {
                       </div>
                     )}
                     <div className="text-xs font-medium text-zinc-400 truncate flex-1">
-                      {review.variantName ? `${review.variantName}` : 'Product'}
+                      {review.productName} {review.variantName ? `- ${review.variantName}` : ''}
                     </div>
                   </div>
                 </div>

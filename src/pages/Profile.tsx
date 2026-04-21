@@ -1,11 +1,12 @@
-﻿import React, { useState, useEffect } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
-import { ArrowLeft, User as UserIcon, Package, Key, ShoppingBag, Plus, Save, Image as ImageIcon, Edit2, Trash2, Ticket, LayoutDashboard, Wallet, Link as LinkIcon, Copy, CreditCard, Bitcoin, Gamepad2 } from 'lucide-react';
+import { ArrowLeft, User as UserIcon, Package, Key, ShoppingBag, Plus, Save, Image as ImageIcon, Edit2, Trash2, Ticket, LayoutDashboard, Wallet, Link as LinkIcon, Copy, CreditCard, Bitcoin, Gamepad2, Receipt } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, updateDoc, addDoc, query, where, deleteDoc, orderBy, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, addDoc, query, where, deleteDoc, orderBy, getDoc, onSnapshot, writeBatch } from 'firebase/firestore';
 import ImageCropper from '../components/ImageCropper';
 import Navbar from '../components/Navbar';
+import SEO from '../components/SEO';
 
 function Toast({ toast }: { toast: {message: string, type: string} | null }) {
   if (!toast) return null;
@@ -18,7 +19,9 @@ function Toast({ toast }: { toast: {message: string, type: string} | null }) {
 
 export default function Profile() {
   const { profile, user, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'balance' | 'affiliate' | 'settings' | 'purchases' | 'products' | 'keys' | 'promocodes'>('dashboard');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as any) || 'dashboard';
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'balance' | 'affiliate' | 'settings' | 'purchases' | 'invoices' | 'tickets'>(initialTab);
   const [toast, setToast] = useState<{message: string, type: 'success'|'error'} | null>(null);
 
   const showToast = (message: string, type: 'success'|'error' = 'success') => {
@@ -31,6 +34,7 @@ export default function Profile() {
 
   return (
     <div className="w-full">
+      <SEO title="My Profile | Rumble Hub" description="Manage your purchases, tickets, and account settings." />
       <Navbar />
       <Toast toast={toast} />
 
@@ -67,30 +71,18 @@ export default function Profile() {
           >
             <ShoppingBag className="w-5 h-5" /> My Purchases
           </button>
-          
-          {profile.role === 'admin' && (
-            <>
-              <div className="pt-4 pb-2 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Admin Panel</div>
-              <button
-                onClick={() => setActiveTab('products')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'products' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
-              >
-                <Package className="w-5 h-5" /> Manage Products
-              </button>
-              <button
-                onClick={() => setActiveTab('keys')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'keys' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
-              >
-                <Key className="w-5 h-5" /> Manage Keys
-              </button>
-              <button
-                onClick={() => setActiveTab('promocodes')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'promocodes' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
-              >
-                <Ticket className="w-5 h-5" /> Promo Codes
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => setActiveTab('invoices')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'invoices' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
+          >
+            <Receipt className="w-5 h-5" /> Invoices
+          </button>
+          <button
+            onClick={() => setActiveTab('tickets')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'tickets' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
+          >
+            <Ticket className="w-5 h-5" /> Support Tickets
+          </button>
         </div>
 
         {/* Main Content */}
@@ -100,9 +92,8 @@ export default function Profile() {
           {activeTab === 'affiliate' && <AffiliateTab user={user} profile={profile} showToast={showToast} setActiveTab={setActiveTab} />}
           {activeTab === 'settings' && <SettingsTab profile={profile} showToast={showToast} />}
           {activeTab === 'purchases' && <PurchasesTab user={user} />}
-          {activeTab === 'products' && profile.role === 'admin' && <AdminProducts showToast={showToast} />}
-          {activeTab === 'keys' && profile.role === 'admin' && <AdminKeys showToast={showToast} />}
-          {activeTab === 'promocodes' && profile.role === 'admin' && <AdminPromoCodes showToast={showToast} />}
+          {activeTab === 'invoices' && <InvoicesTab user={user} />}
+          {activeTab === 'tickets' && <TicketsTab user={user} profile={profile} />}
         </div>
       </div>
     </div>
@@ -349,6 +340,8 @@ function BalanceTab({ user, profile, showToast }: { user: any, profile: any, sho
               amount: finalAmount,
               method: 'Credit Card',
               sessionId: sessionId,
+              promoCode: data.metadata.promoCode || null,
+              promoDetails: data.metadata.promoDetails || null,
               createdAt: Date.now()
             });
             
@@ -416,7 +409,8 @@ function BalanceTab({ user, profile, showToast }: { user: any, profile: any, sho
         promoUsed = {
           id: promoId,
           uses: promo.uses + 1,
-          usedBy: { ...promo.usedBy, [user.uid]: userUses + 1 }
+          usedBy: { ...promo.usedBy, [user.uid]: userUses + 1 },
+          detailsStr: promo.type === 'balance' ? `+$${promo.value} bonus` : `${promo.value}% discount`
         };
       }
 
@@ -426,6 +420,8 @@ function BalanceTab({ user, profile, showToast }: { user: any, profile: any, sho
           metadata.promoId = promoUsed.id;
           metadata.promoUses = promoUsed.uses;
           metadata.promoUsedBy = JSON.stringify(promoUsed.usedBy);
+          metadata.promoCode = promoCode.toUpperCase();
+          metadata.promoDetails = promoUsed.detailsStr;
         }
         if (discountToApply > 0) {
           metadata.discountToApply = discountToApply;
@@ -781,6 +777,111 @@ function PurchasesTab({ user }: { user: any }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function InvoicesTab({ user }: { user: any }) {
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      const q = query(collection(db, 'transactions'), where('userId', '==', user.uid));
+      const snap = await getDocs(q);
+      let data = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      setInvoices(data);
+      setLoading(false);
+    };
+    fetchInvoices();
+  }, [user]);
+
+  const filteredInvoices = invoices
+    .filter(inv => {
+      const term = search.toLowerCase();
+      return (
+        inv.id.toLowerCase().includes(term) ||
+        (inv.productTitle || inv.productName || 'Top Up').toLowerCase().includes(term) ||
+        (inv.promoCode || '').toLowerCase().includes(term)
+      );
+    })
+    .sort((a, b) => {
+      if (sortOrder === 'desc') return b.createdAt - a.createdAt;
+      return a.createdAt - b.createdAt;
+    });
+
+  if (loading) return <div className="text-zinc-500">Loading invoices...</div>;
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <h2 className="text-2xl font-bold">Invoices</h2>
+        <div className="flex items-center gap-2">
+          <input 
+            type="text" 
+            placeholder="Search invoices..." 
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          />
+          <button 
+            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+            className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm text-white hover:bg-zinc-800 transition-colors"
+          >
+            Sort: {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-zinc-400 bg-zinc-900 uppercase">
+              <tr>
+                <th className="px-6 py-4 font-medium">Status</th>
+                <th className="px-6 py-4 font-medium">ID</th>
+                <th className="px-6 py-4 font-medium">Product</th>
+                <th className="px-6 py-4 font-medium">Amount</th>
+                <th className="px-6 py-4 font-medium">Method</th>
+                <th className="px-6 py-4 font-medium">Promo Code</th>
+                <th className="px-6 py-4 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8 text-center text-zinc-500">No invoices found.</td>
+                </tr>
+              ) : (
+                filteredInvoices.map(inv => (
+                  <tr key={inv.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded text-xs font-medium border border-emerald-500/20">
+                        Completed
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-mono text-xs text-zinc-500">{inv.id}</td>
+                    <td className="px-6 py-4 font-medium text-white">{inv.productTitle || inv.productName || 'Top Up'}</td>
+                    <td className="px-6 py-4 text-emerald-400">${inv.amount?.toFixed(2)}</td>
+                    <td className="px-6 py-4 capitalize text-zinc-400">{inv.method || inv.paymentMethod || 'Stripe'}</td>
+                    <td className="px-6 py-4 text-zinc-400">
+                      {inv.promoCode ? (
+                        <div>
+                          <span className="font-medium text-white">{inv.promoCode}</span>
+                          {inv.promoDetails && <span className="text-xs ml-1 text-indigo-400">({inv.promoDetails})</span>}
+                        </div>
+                      ) : '-'}
+                    </td>
+                    <td className="px-6 py-4 text-zinc-400">{new Date(inv.createdAt).toLocaleString()}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1346,6 +1447,247 @@ function AdminPromoCodes({ showToast }: { showToast: any }) {
         ))}
         {promos.length === 0 && (
           <div className="text-zinc-500 text-sm italic">No promo codes active.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TicketsTab({ user, profile }: { user: any, profile: any }) {
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [newSubject, setNewSubject] = useState('');
+  const msgInitLoad = React.useRef(true);
+
+  const selectedTicket = tickets.find(t => t.id === selectedTicketId) || null;
+
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.play().catch(() => {});
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    const q = query(collection(db, 'tickets'), where('userId', '==', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const t = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      t.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      setTickets(t);
+    }, (err) => {
+      console.error("Tickets Listener Error:", err);
+    });
+    return () => unsub();
+  }, [user.uid]);
+
+  useEffect(() => {
+    if (!selectedTicketId) return;
+    msgInitLoad.current = true;
+    const q = query(collection(db, `tickets/${selectedTicketId}/messages`), orderBy('createdAt', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      if (!msgInitLoad.current) {
+        const changes = snap.docChanges();
+        const hasNewMsg = changes.some(c => c.type === 'added' && c.doc.data().senderId !== user.uid);
+        if (hasNewMsg) playNotificationSound();
+      }
+      msgInitLoad.current = false;
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [selectedTicketId, user.uid]);
+
+  const handleCreateTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubject.trim()) return;
+
+    try {
+      const batch = writeBatch(db);
+      const newTicketRef = doc(collection(db, 'tickets'));
+      
+      batch.set(newTicketRef, {
+        userId: user.uid,
+        userEmail: profile.email,
+        subject: newSubject,
+        status: 'active',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastMessage: 'Ticket created'
+      });
+      
+      const newMessageRef = doc(collection(db, `tickets/${newTicketRef.id}/messages`));
+      batch.set(newMessageRef, {
+        text: 'Ticket created. Please describe your issue.',
+        senderId: 'system',
+        senderName: 'System',
+        ticketUserId: user.uid,
+        isAdmin: true,
+        createdAt: Date.now()
+      });
+
+      await batch.commit();
+
+      setNewSubject('');
+      setIsCreating(false);
+      setSelectedTicketId(newTicketRef.id);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedTicket) return;
+
+    try {
+      const batch = writeBatch(db);
+      const newMessageRef = doc(collection(db, `tickets/${selectedTicket.id}/messages`));
+      
+      batch.set(newMessageRef, {
+        text: newMessage,
+        senderId: user.uid,
+        senderName: profile.displayName || 'Me',
+        ticketUserId: user.uid,
+        isAdmin: false,
+        createdAt: Date.now()
+      });
+      
+      const ticketRef = doc(db, 'tickets', selectedTicket.id);
+      batch.update(ticketRef, {
+        updatedAt: Date.now(),
+        lastMessage: newMessage,
+        status: 'active'
+      });
+      
+      await batch.commit();
+
+      setNewMessage('');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
+  return (
+    <div className="h-[600px] flex gap-6">
+      {/* Ticket List */}
+      <div className="w-1/3 bg-zinc-900/50 border border-zinc-800 rounded-xl flex flex-col overflow-hidden">
+        <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+          <h2 className="font-bold text-white">My Tickets</h2>
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {isCreating && (
+            <div className="p-4 border-b border-zinc-800 bg-zinc-900">
+              <form onSubmit={handleCreateTicket} className="space-y-2">
+                <input 
+                  type="text" 
+                  value={newSubject}
+                  onChange={e => setNewSubject(e.target.value)}
+                  placeholder="Ticket Subject"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button type="submit" className="flex-1 bg-indigo-600 text-white text-xs py-1.5 rounded-lg">Create</button>
+                  <button type="button" onClick={() => setIsCreating(false)} className="flex-1 bg-zinc-800 text-white text-xs py-1.5 rounded-lg">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+          {tickets.length === 0 && !isCreating ? (
+            <div className="p-8 text-center text-zinc-500 text-sm">No tickets found.</div>
+          ) : (
+            tickets.map(ticket => (
+              <div 
+                key={ticket.id}
+                onClick={() => setSelectedTicketId(ticket.id)}
+                className={`p-4 border-b border-zinc-800 cursor-pointer transition-colors ${
+                  selectedTicket?.id === ticket.id ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <div className="font-medium text-white text-sm truncate pr-2">{ticket.subject}</div>
+                  <div className="text-[10px] text-zinc-500 whitespace-nowrap">
+                    {new Date(ticket.updatedAt).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-xs text-zinc-400 truncate pr-4">{ticket.lastMessage}</div>
+                  {ticket.status === 'closed' ? (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">Closed</span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Chat Area */}
+      <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-xl flex flex-col overflow-hidden">
+        {selectedTicket ? (
+          <>
+            <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+              <h2 className="font-bold text-white">{selectedTicket.subject}</h2>
+              {selectedTicket.status === 'closed' && (
+                <span className="text-xs text-zinc-500">This ticket is closed. Replying will reopen it.</span>
+              )}
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.map(msg => {
+                const isMe = msg.senderId === user.uid;
+                return (
+                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-xl p-3 ${
+                      isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-zinc-800 text-zinc-200 rounded-tl-none'
+                    }`}>
+                      <div className="text-[10px] opacity-70 mb-1 flex justify-between gap-4">
+                        <span>{msg.senderName}</span>
+                        <span>{new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                      </div>
+                      <div className="text-sm break-words whitespace-pre-wrap">{msg.text}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-zinc-800">
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newMessage}
+                  onChange={e => setNewMessage(e.target.value)}
+                  placeholder="Type your message..."
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+                <button 
+                  type="submit"
+                  disabled={!newMessage.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-zinc-500">
+            <Ticket className="w-12 h-12 mb-4 text-zinc-600" />
+            <p className="text-lg font-medium">Select a ticket to view</p>
+          </div>
         )}
       </div>
     </div>

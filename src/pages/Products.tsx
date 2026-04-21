@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
+import SEO from '../components/SEO';
 import { Link } from 'react-router-dom';
 import { ShoppingCart, Search, RefreshCw } from 'lucide-react';
 import { useAuth } from '../AuthContext';
@@ -62,6 +63,7 @@ export default function Products() {
 
   return (
     <div className="w-full">
+      <SEO title="Products | Rumble Hub" description="Browse all our premium products and find the right one for you." />
       <Navbar />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pt-32">
