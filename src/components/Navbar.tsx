@@ -177,6 +177,13 @@ export default function Navbar() {
                       </span>
                     )}
                   </button>
+
+                  {/* Admin Panel Link */}
+                  {profile.role === 'admin' && (
+                    <Link to="/admin" className="hidden sm:flex items-center gap-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                      Admin Panel
+                    </Link>
+                  )}
                   
                   {/* Avatar */}
                   <Link to="/profile" className="block relative group" title="Profile & Settings">
